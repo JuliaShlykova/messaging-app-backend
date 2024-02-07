@@ -17,9 +17,8 @@ exports.udpateNickname = [
   body('nickname')
   .isLength({min: 1})
   .withMessage('user nickname must be specified')
-  .isLength({max: 100})
-  .withMessage('user nickname mustn\'t exceed 100')
-  .escape(),
+  .isLength({max: 40})
+  .withMessage('user nickname mustn\'t exceed 40'),
   async (req, res, next) => {
     try {
       const errors = validationResult(req);
@@ -27,8 +26,12 @@ exports.udpateNickname = [
         return res.status(422).json({'errors': errors.array()});
       }
       const { nickname } = req.body;
-      const updUser = await User.findByIdAndUpdate(req.user._id, {nickname}, {new: true});
-      res.status(200).json({updUser});
+      const checkUsedNickname = await User.findOne({nickname: nickname});
+      if (checkUsedNickname) {
+        return res.status(422).json({'errors': [{msg: 'The nickname is already in the database. Please, create another.'}]})
+      } 
+      await User.findByIdAndUpdate(req.user._id, {nickname}, {new: true});
+      res.sendStatus(200);
     } catch(err) {
       next(err);
     }
@@ -77,8 +80,8 @@ exports.uploadUserImg = [
 exports.getOtherUserInfo = async (req, res, next) => {
   try {
     const userNickname = req.params.userNickname;
-    const userInfo = await User.find({nickname: userNickname}).select('nickname profileImgUrl');
-    const rooms = Room
+    const userInfo = await User.findOne({nickname: userNickname}).select('nickname profileImgUrl');
+    const rooms = await Room
     .find({$and: [{$or: [{participants: userInfo._id}, {admin: userInfo._id}]}, {private: false}]})
     .select('name roomImgUrl')
     .lean();
@@ -86,4 +89,4 @@ exports.getOtherUserInfo = async (req, res, next) => {
   } catch(err) {
     next(err);
   }
-}
+};

@@ -4,7 +4,7 @@ const { DateTime } = require('luxon');
 const Schema = mongoose.Schema;
 
 const messageSchema = new Schema({
-  text: {type: String, required: true},
+  text: {type: String, maxLength: 300, required: true},
   room: {type: Schema.Types.ObjectId, ref: 'Room'},
   author: {type: Schema.Types.ObjectId, ref: 'User', required: true}
 }, {

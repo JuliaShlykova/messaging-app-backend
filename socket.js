@@ -1,20 +1,72 @@
 const { Server } = require('socket.io');
+const fetchChats = require('./utils/fetchChatsForSocket');
+const transformLongMessage = require('./utils/transformLongMsg');
+
+let onlineUsers = [];
 
 const initSocket = (server) => {
   const io = new Server(server, {
-
-  }); //created new instance of socket.io
+    cors: {
+      origin: [process.env.CLIENT_URL]
+    }
+  });
 
   io.on('connection', (socket) => {
     console.log('a user connected');
 
+    socket.on('login', async (user) => {
+      if (!onlineUsers.some((onlineUser) => onlineUser.id === user.id)) {
+        onlineUsers.push({...user, socketId: socket.id});
+        const chats = await fetchChats(user);
+        chats.forEach(chat => socket.join(chat._id.toString()));
+      }
+      io.emit('onlineUsers', onlineUsers);
+    })
+
     socket.on('disconnect', () => {
       console.log('user disconnected');
-    }); //each socket fires a special disconnect event
+      const index = onlineUsers.findIndex((onlineUser) => onlineUser.socketId === socket.id);
+      if (index !== -1) onlineUsers.splice(index, 1);
+      socket.broadcast.emit('onlineUsers', onlineUsers);
+    });
+
+    socket.on('getOnlineUsers', () => {
+      io.to(socket.id).emit('onlineUsers', onlineUsers);
+    })
     
-  }); //listen on the connection event for incoming sockets
+    socket.on('createRoom', (room) => {
+      let  participants = onlineUsers.filter(user => room.participants.includes(user.id)||(room.admin===user.id));
+      for (let participant of participants) {
+        io.sockets.sockets.get(participant.socketId).join(room.id);
+      }
+      io.emit('createRoom', {room});
+    })
 
+    socket.on('privateRoom', ({room, participantsInfo})  => {
+      let  participants = onlineUsers.filter(user => room.participants.includes(user.id));
+      for (let participant of participants) {
+        io.sockets.sockets.get(participant.socketId).join(room.id);
+      }
+      io.to(room.id).emit('createRoom', {room, participantsInfo});
+    })
 
+    socket.on('message', (message) => {
+      socket.to(message.room).emit('message', message);
+      io.to(message.room).emit('lastMessage',{roomId: message.room, lastMsg: transformLongMessage(message.text)});
+    })
+
+    socket.on('renameRoom', ({roomId, newName}) => {
+      io.to(roomId).emit('renameRoom', {roomId, newName});
+    })
+
+    socket.on('updateRoomImgUrl', ({roomId, roomImgUrl}) => {
+      io.to(roomId).emit('newRoomImg', {roomId, roomImgUrl});
+    })
+
+    socket.on('deleteRoom', ({roomId}) => {
+      io.emit('deleteRoom', {roomId});
+    })
+  });
 } 
 
 module.exports = {initSocket};

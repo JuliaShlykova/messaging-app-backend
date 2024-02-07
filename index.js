@@ -22,7 +22,7 @@ require('./configs/passport.config')(passport);
 const app = express();
 
 app.use(cors({
-  origin: ['http://localhost:3000'],
+  origin: [process.env.CLIENT_URL],
   credentials: true
 }));
 app.use(helmet());
@@ -34,11 +34,12 @@ app.use(rateLimit({
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+app.disable('x-powered-by');
 
 app.use(passport.initialize());
 
 app.use('/rooms', roomRouter);
-app.use('/user', userRouter);
+app.use('/users', userRouter);
 app.use('/auth', authRouter);
 
 app.use((req, res, next) => {

@@ -6,27 +6,25 @@ exports.getMessages = async (req, res, next) => {
   try {
     const { roomId } = req.params;
     const room = await Room.findById(roomId).populate('admin', 'nickname profileImgUrl').populate('participants', 'nickname profileImgUrl');
-    if (!room['participants'].some(user=>user._id===req.user._id)||!(room.admin._id===req.user._id)) {
+    if (!room['participants'].some(user=>user._id.equals(req.user._id))&&!(room.admin?._id.equals(req.user._id))) {
       return res.status(200).json({access: false, room})
     }
     const messages = await Message
       .find({room: roomId})
-      .sort({createdAt: -1})
+      .sort({createdAt: 1})
       .populate('author', 'nickname profileImgUrl');
-    res.status(200).json({messages, access: true});
+    res.status(200).json({messages, access: true, room});
   } catch (err) {
     next(err);
   }
-}
+};
 
 exports.createMessage = [
   body('text')
   .isLength({min: 1})
   .withMessage('message must be specified')
-  // maximum limit has been taken from facebook
-  .isLength({max: 8000})
-  .withMessage('message mustn\'t exceed 8000')
-  .escape(),
+  .isLength({max: 300})
+  .withMessage('message mustn\'t exceed 300 characters'),
   async (req, res, next) => {
     try {
       const errors = validationResult(req);
@@ -40,4 +38,4 @@ exports.createMessage = [
     } catch(err) {
       next(err);
     }
-}]
+}];

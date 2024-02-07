@@ -4,7 +4,7 @@ exports.removeImg = (file) => {
   imageKit.deleteFile(file, function(error, result) {
     if(error) console.log(error);
   })
-}
+};
 
 exports.uploadImg = (file) => {
   return imageKit.upload({
@@ -12,4 +12,4 @@ exports.uploadImg = (file) => {
     fileName: file.originalname,
     useUniqueFileName: true
   })
-}
+};

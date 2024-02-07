@@ -4,7 +4,7 @@ const { DateTime } = require('luxon');
 const Schema = mongoose.Schema;
 
 const roomSchema = new Schema({
-  name: {type: String},
+  name: {type: String, maxLength: 100},
   admin: {type: Schema.Types.ObjectId, ref: 'User'},
   participants: [{type: Schema.Types.ObjectId, ref: 'User'}],
   private: {type: Boolean, default: false},

@@ -4,6 +4,7 @@ const {removeImg, uploadImg } = require('../utils/profileImg');
 const Room = require('../models/Room');
 const Message = require('../models/Message');
 const User = require('../models/User');
+const transformLongMessage = require('../utils/transformLongMsg');
 
 const getLastMessage = async (roomId) => {
   try {
@@ -16,7 +17,7 @@ const getLastMessage = async (roomId) => {
   } catch(err) {
     throw err
   }
-}
+};
 
 exports.getUserRooms = async (req, res, next) => {
   try {
@@ -29,7 +30,7 @@ exports.getUserRooms = async (req, res, next) => {
     const [rooms, privateRooms] = await Promise.all([roomsPromise, privateRoomsPromise]);
     const privateRoomsUpd = privateRooms.map(oldRoom => {
       const room = oldRoom.toJSON();
-      let partner = room.participants.find(user => user._id !== req.user._id);
+      let partner = room.participants.find(user => !user._id.equals(req.user._id));
       return {...room, name: partner.nickname, roomImgUrl: partner.profileImgUrl}
     })
     const roomsWithMsgPromises = [...rooms, ...privateRoomsUpd].map(async (oldRoom) => {
@@ -38,21 +39,21 @@ exports.getUserRooms = async (req, res, next) => {
         room = oldRoom;
       } else {
         room = oldRoom.toJSON();
-      }
+      };
       let lastMsg = await getLastMessage(room._id);
       if (!lastMsg) {
         lastMsg = {};
         lastMsg.text = `created at ${room.formatted_timestamp}`;
         lastMsg.createdAt = room.createdAt;
       };
-      return {...room, lastMessage: lastMsg.text, lastTimestamp: lastMsg.createdAt};
+      return {...room, lastMessage: transformLongMessage(lastMsg.text), lastTimestamp: lastMsg.createdAt};
     })
-    const roomsWithMsg = await Promise.all(roomsWithMsgPromises)
+    const roomsWithMsg = await Promise.all(roomsWithMsgPromises);
     res.status(200).json({rooms: roomsWithMsg});
   } catch(err) {
     next(err);
   }
-}
+};
 
 exports.getOtherRooms = async (req, res, next) => {
   try {
@@ -64,19 +65,7 @@ exports.getOtherRooms = async (req, res, next) => {
   } catch(err) {
     next(err);
   }
-}
-
-exports.getRoomInfo = async (req, res, next) => {
-  try {
-    const roomInfo = await Room
-      .findById(req.params.roomId)
-      .populate('admin', 'nickname profileImgUrl')
-      .populate('participants', 'nickname profileImgUrl');
-    res.status(200).json({roomInfo});
-  } catch(err) {
-    next(err);
-  }
-}
+};
 
 exports.getUsersToInvite = async (req, res, next) => {
   try {
@@ -86,58 +75,74 @@ exports.getUsersToInvite = async (req, res, next) => {
     const notParticipants = await User
       .find(
         {_id: {$nin: [...participants, admin]}},
-        'nickname profileImgUrl')
+        'nickname profileImgUrl'
+      )
       .lean();
     res.status(200).json({users: notParticipants});
   } catch(err) {
     next(err);
   }
-}
+};
 
 exports.createRoom = [
+  (req, res, next) => {
+    if (!Array.isArray(req.body.participants)) {
+      req.body.participants =
+        typeof req.body.participants === "undefined" ? [] : [req.body.participants];
+    }
+    next();
+  },
   body('name')
     .isLength({min: 1})
     .withMessage('room name must be specified')
     .isLength({max: 100})
-    .withMessage('room name mustn\'t exceed 100')
-    .escape(),
+    .withMessage('room name mustn\'t exceed 100'),
   async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(422).json({'errors': errors.array()});
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(422).json({'errors': errors.array()});
+      }
+      const { name, participants } = req.body;
+      const newRoom = new Room({name, participants, admin: req.user._id});
+      const roomInfo = await newRoom.save();
+      res.status(200).json({roomInfo});
+    } catch(err) {
+      next(err);
     }
-    const { name, participants } = req.body;
-    const newRoom = new Room({name, participants, admin: req.user._id});
-    const roomInfo = await newRoom.save();
-    res.status(200).json({roomInfo});
-  } catch(err) {
-    next(err);
   }
-}]
+];
 
 exports.joinRoom = async (req, res, next) => {
   try {
     await Room.findByIdAndUpdate(
       req.params.roomId, 
-      {$push: {'participants': req.user._id}});
+      {$addToSet: {'participants': req.user._id}});
     res.sendStatus(200);
   } catch(err) {
     next(err);
   }
-}
+};
 
-exports.inviteToRoom = async (req, res, next) => {
+exports.inviteToRoom = [
+  (req, res, next) => {
+    if (!Array.isArray(req.body.participants)) {
+      req.body.participants =
+        typeof req.body.participants === "undefined" ? [] : [req.body.participants];
+    }
+    next();
+  },
+  async (req, res, next) => {
   try {
     await Room.findByIdAndUpdate(
       req.params.roomId,
-      {$push: {'participants': req.body.userId}}
+      {$push: {'participants': {$each: req.body.participants}}}
     )
-    res.sendStatus(200);
+    res.status(200).send({newParticipants: req.body.participants});
   } catch(err) {
     next(err);
   }
-}
+}];
 
 exports.leaveRoom = async (req, res, next) => {
   try {
@@ -146,34 +151,37 @@ exports.leaveRoom = async (req, res, next) => {
   } catch(err) {
     next(err);
   }
-}
+};
 
 exports.privateRoom = async (req, res, next) => {
   try {
     const { userId } = req.body;
     const checkingRoom = await Room.findOne({participants: [userId, req.user._id], private: true});
     let roomInfo;
+    let newlyCreated = false;
     if (checkingRoom) {
       roomInfo = checkingRoom;
+      res.status(200).json({roomId: roomInfo._id, newlyCreated});
     } else {
       const newRoom = new Room({participants: [userId, req.user._id], private: true});
       roomInfo = await newRoom.save();
+      newlyCreated = true;
+      // const partner = await User.findById(userId);
+      const roomInfoJSON = roomInfo.toJSON();
+      // res.status(200).json({...roomInfoJSON, name: partner.nickname, roomImgUrl: partner.profileImgUrl, newlyCreated});
+      res.status(200).json({...roomInfoJSON, newlyCreated});
     }
-    const partner = await User.findById(userId);
-    const roomInfoJSON = roomInfo.toJSON();
-    res.status(200).json({...roomInfoJSON, name: partner.nickname, roomImgUrl: partner.profileImgUrl});
   } catch(err) {
     next(err);
   }
-}
+};
 
 exports.updateRoomName = [
   body('name')
     .isLength({min: 1})
     .withMessage('room name must be specified')
     .isLength({max: 100})
-    .withMessage('room name mustn\'t exceed 100')
-    .escape(),
+    .withMessage('room name mustn\'t exceed 100'),
     async (req, res, next) => {
       try {
         const errors = validationResult(req);
@@ -186,7 +194,7 @@ exports.updateRoomName = [
       } catch(err) {
         next(err);
       }
-    }]
+}];
 
 exports.uploadRoomImg = [
   multer.single('roomImg'),
@@ -225,4 +233,19 @@ exports.uploadRoomImg = [
       next(err);
     }
   }
-]
+];
+
+exports.deleteRoom = async (req, res, next) => {
+  try {
+    let roomId = req.params.roomId;
+    const checkingRoom = await Room.findById(req.params.roomId);
+    if (checkingRoom.admin.equals(req.user._id)){
+      await Room.findByIdAndDelete(roomId);
+      await Message.deleteMany({room: roomId});
+      return res.sendStatus(200);
+    }
+    res.sendStatus(403);
+  } catch(err) {
+    next(err);
+  }
+};
