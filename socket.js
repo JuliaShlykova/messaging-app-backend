@@ -7,7 +7,7 @@ let onlineUsers = [];
 const initSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: [process.env.CLIENT_URL]
+      origin: ["https://messaging-app-frontend-two.vercel.app", "http://localhost:5000"]
     }
   });
 
