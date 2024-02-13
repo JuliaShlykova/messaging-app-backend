@@ -21,7 +21,7 @@ require('./configs/passport.config')(passport);
 
 const app = express();
 
-app.set('trust proxy', 1)
+app.set('trust proxy', 2)
 app.get('/ip', (request, response) => response.send(request.ip))
 app.use(cors({
   origin: ["https://messaging-app-frontend-two.vercel.app", "http://localhost:5000"],
