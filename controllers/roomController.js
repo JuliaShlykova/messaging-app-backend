@@ -156,7 +156,7 @@ exports.leaveRoom = async (req, res, next) => {
 exports.privateRoom = async (req, res, next) => {
   try {
     const { userId } = req.body;
-    const checkingRoom = await Room.findOne({participants: [userId, req.user._id], private: true});
+    const checkingRoom = await Room.findOne({participants: {$all: [userId, req.user._id]}, private: true});
     let roomInfo;
     let newlyCreated = false;
     if (checkingRoom) {
